@@ -1,0 +1,6 @@
+# Never commit these
+terraform.tfvars
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl

@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in your values.
+# NEVER commit terraform.tfvars — it contains secrets.
+
+aws_region        = "us-west-2"
+project           = "lastmile"
+environment       = "prod"
+
+ec2_instance_type = "t3.small"
+db_instance_class = "db.t3.micro"
+redis_node_type   = "cache.t3.micro"
+
+db_name           = "lastmile"
+db_username       = "lastmile_user"
+db_password       = "REPLACE_WITH_STRONG_PASSWORD"   # min 8 chars
+
+ssh_key_name      = "REPLACE_WITH_YOUR_EC2_KEY_PAIR_NAME"
+allowed_ssh_cidr  = "YOUR_IP/32"   # e.g. "203.0.113.42/32"

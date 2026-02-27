@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "all-services",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "--build"],
+      "port": 3000
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "backend", "worker", "db", "redis"],
+      "port": 8000
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "frontend"],
+      "port": 3000
+    }
+  ]
+}

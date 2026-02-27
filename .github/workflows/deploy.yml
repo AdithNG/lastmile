@@ -1,0 +1,53 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+jobs:
+  # ─── Gate: tests must pass before deploy ────────────────────────────────────
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  # ─── Deploy: SSH into EC2, pull latest, rebuild containers ──────────────────
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    environment: production  # requires manual approval in GitHub Environments settings
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/lastmile
+
+            # Pull latest code
+            git fetch origin main
+            git reset --hard origin/main
+
+            # Rebuild and restart containers
+            docker compose pull --ignore-pull-failures || true
+            docker compose up --build -d
+
+            # Run migrations
+            docker compose exec -T backend alembic upgrade head
+
+            # Health check — wait up to 30s for backend to respond
+            for i in $(seq 1 6); do
+              if curl -sf http://localhost:8000/health; then
+                echo "Health check passed"
+                exit 0
+              fi
+              echo "Attempt $i/6 — waiting..."
+              sleep 5
+            done
+            echo "Health check failed after 30s" && exit 1
