@@ -37,6 +37,12 @@ export interface RouteStop {
   planned_arrival: string | null;
 }
 
+export interface TrafficEvent {
+  from_idx: number;
+  to_idx: number;
+  delay_factor: number;
+}
+
 export interface RouteStopDetail {
   stop_id: number;
   sequence: number;
@@ -85,5 +91,5 @@ export const api = {
     post(`/routes/${routeId}/reroute`, { traffic_events: trafficEvents }),
 
   injectTraffic: (routeId: number, delayFactor: number) =>
-    post("/simulation/inject-traffic", { route_id: routeId, delay_factor: delayFactor }),
+    post<TrafficEvent[]>("/simulation/inject-traffic", { route_id: routeId, delay_factor: delayFactor }),
 };

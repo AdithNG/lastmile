@@ -25,6 +25,7 @@ export default function App() {
   const [metrics, setMetrics] = useState<OptimizeResult | null>(null);
   const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null);
   const [mapCentre, setMapCentre] = useState<[number, number]>(CITY_CENTRES.seattle);
+  const [trafficLoading, setTrafficLoading] = useState(false);
 
   // Keep a ref so the WebSocket effect closure can access latest routes without stale state
   const routesRef = useRef<RouteState[]>([]);
@@ -83,6 +84,18 @@ export default function App() {
     setSelectedRouteId(populated[0]?.routeId ?? null);
   }
 
+  async function handleTrafficInject(routeId: number) {
+    setTrafficLoading(true);
+    try {
+      const events = await api.injectTraffic(routeId, 1.8);
+      await api.reroute(routeId, events);
+    } catch (err) {
+      console.error("Traffic inject failed:", err);
+    } finally {
+      setTrafficLoading(false);
+    }
+  }
+
   const mapLayers = routes.map((r) => ({
     routeId: r.routeId,
     depotLat: r.depotLat,
@@ -129,6 +142,8 @@ export default function App() {
           }))}
           selectedRouteId={selectedRouteId}
           onSelect={setSelectedRouteId}
+          onInjectTraffic={handleTrafficInject}
+          trafficLoading={trafficLoading}
         />
         <DeliveryMap
           routes={mapLayers}
