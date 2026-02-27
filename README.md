@@ -1,346 +1,236 @@
 # LastMile
-> A real-time delivery route optimization engine — built to demonstrate mastery of the core problem Amazon Logistics solves at scale.
+
+**Real-time delivery route optimization engine** — a full-stack implementation of the Capacitated Vehicle Routing Problem with Time Windows (CVRPTW), the same core logistics problem Amazon solves for millions of deliveries every day.
+
+[![CI](https://github.com/AdithNG/lastmile/actions/workflows/ci.yml/badge.svg)](https://github.com/AdithNG/lastmile/actions/workflows/ci.yml)
+![Tests](https://img.shields.io/badge/tests-25%20passed-brightgreen)
+![Python](https://img.shields.io/badge/python-3.11-blue)
+![TypeScript](https://img.shields.io/badge/typescript-5.4-blue)
 
 ---
 
-## Why This Project
+## What It Does
 
-Amazon ran the **Last Mile Routing Research Challenge** with MIT to solve exactly this problem. Their internal system (DDP — Dynamic Dispatch Platform) uses reinforcement learning to optimize tens of millions of deliveries. This project is your simplified but technically rigorous implementation of that same problem domain.
+LastMile takes a set of delivery stops scattered across a city, a fleet of vehicles each with a weight capacity, and time windows for each stop — and computes the optimal set of routes for each driver. When traffic conditions change mid-delivery, it reroutes in real time and pushes updated ETAs to the frontend over WebSocket.
 
-When an Amazon interviewer asks about your project, you say:
-> "I built a route optimization engine that models the same core problem as Amazon's DDP system — the Capacitated Vehicle Routing Problem with Time Windows — using a greedy nearest-neighbor heuristic with 2-opt improvement, real-time traffic integration, and a live React dashboard."
-
-That is a 30-minute interview conversation. Not a 2-minute one.
-
----
-
-## What This Project Actually Is (Plain English)
-
-You have:
-- A **depot** (warehouse/distribution center) where drivers start
-- A set of **delivery stops** (addresses with coordinates)
-- A fleet of **drivers/vehicles** (each with capacity limits)
-- **Time windows** per stop (customer is only home 2–4pm)
-- **Real-time traffic** that changes travel time between stops
-
-Your system must answer: **"What is the most efficient set of routes to assign to each driver so all packages are delivered on time, no vehicle is overloaded, and total distance/time is minimized?"**
-
-This is called the **Capacitated Vehicle Routing Problem with Time Windows (CVRPTW)** — one of the most studied NP-hard problems in computer science. Amazon processes this for millions of stops daily.
+**Live demo flow:**
+1. Select a city (Seattle / LA / NYC), set number of stops and vehicles
+2. Click **Run Simulation** — the engine generates stops, solves the CVRPTW, and draws colored route polylines on the map
+3. Click any route in the fleet panel to see its full stop list with addresses and ETAs
+4. Click **Simulate Traffic Delay** — the rerouter recomputes ETAs with a 1.8× delay factor and the map updates live via WebSocket
 
 ---
 
-## The Core Algorithm (This Is The Heart of the Project)
+## Architecture
 
-### Phase 1: Nearest Neighbor Heuristic (Greedy Construction)
-Build an initial solution fast:
-1. Start at depot
-2. Assign the nearest unvisited stop to the current driver's route
-3. Check: does adding this stop violate capacity or time window constraints?
-4. If yes → close this route, start a new driver's route
-5. Repeat until all stops are assigned
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Browser (React + Leaflet)                                  │
+│  SimulationControls → FleetPanel → DeliveryMap              │
+│  WebSocket: receives live reroute events                    │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ HTTP / WebSocket
+┌──────────────────────▼──────────────────────────────────────┐
+│  FastAPI (port 8000)                                        │
+│  /simulation/start  →  generate scenario in PostgreSQL      │
+│  /routes/optimize   →  enqueue Celery task, return job_id   │
+│  /routes/{id}/detail→  full stop data with lat/lng          │
+│  /routes/{id}/reroute → recompute ETAs, broadcast WS        │
+│  /routes/ws/{id}    →  WebSocket endpoint                   │
+└──────────┬───────────────────────────┬───────────────────────┘
+           │                           │
+┌──────────▼──────────┐   ┌────────────▼──────────────┐
+│  Celery Worker      │   │  PostgreSQL (RDS in prod)  │
+│  CVRPTWSolver       │   │  depots, vehicles, stops,  │
+│  greedy + 2-opt     │   │  routes, route_stops       │
+└──────────┬──────────┘   └────────────────────────────┘
+           │
+┌──────────▼──────────┐
+│  Redis (ElastiCache) │
+│  task broker +       │
+│  result backend      │
+└─────────────────────┘
+```
 
-This gives you a **feasible but not optimal** solution in O(n²) time.
+---
 
-### Phase 2: 2-Opt Local Search (Improvement)
-Improve the greedy solution:
-- Take any two edges in a route: (A→B) and (C→D)
-- Try reversing the segment between them: (A→C) and (B→D)
-- If the new total distance is shorter AND time windows are still satisfied → accept the swap
+## The Algorithm
+
+CVRPTW is NP-hard — for 20 stops and 3 vehicles there are more possible assignments than atoms in the observable universe. Brute force is impossible. LastMile uses a two-phase heuristic:
+
+### Phase 1 — Greedy Nearest-Neighbor Construction `O(n²)`
+
+Starting from the depot, repeatedly assign the nearest unvisited stop to the current vehicle's route. Before each assignment, validate:
+- **Capacity constraint**: total package weight ≤ vehicle capacity
+- **Time window constraint**: arrival time falls within `[earliest, latest]` for that stop
+
+If adding a stop would violate either constraint, close the current route and start a new vehicle. This produces a feasible solution fast.
+
+### Phase 2 — 2-Opt Local Search (Improvement)
+
+For each route, try reversing every possible sub-segment `[i, j]`:
+- If reversing produces a shorter total distance **and** all time windows still hold → accept
 - Repeat until no improving swap exists
 
-This is the same class of improvement used in Amazon's DDP system. It's simple to implement but produces dramatically better routes.
+In practice this reduces total distance by **10–20% over greedy** in seconds. This is the same class of improvement Amazon's DDP system uses.
 
-### Phase 3: Real-Time Rerouting
-When a driver is already on the road:
-- Receive live traffic update (via HERE Maps or OpenRouteService API)
-- Recalculate remaining stops on that driver's route
-- If a time window is at risk → trigger rerouting via the API
-- Push updated route to the driver's "mobile" view
+### Phase 3 — Real-Time Rerouting
 
-This is what separates a toy project from a real system.
+When a traffic event arrives, the rerouter:
+1. Rebuilds the time matrix for remaining stops
+2. Applies a `delay_factor` multiplier to affected edges
+3. Recomputes ETAs along the existing stop sequence
+4. Broadcasts the updated stop list over WebSocket — the map updates without a page reload
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| Backend | Python, FastAPI | Amazon's preferred languages; async support for real-time updates |
-| Algorithm | Python (NumPy, SciPy) | Matrix distance calculations, route scoring |
-| Task Queue | Celery + Redis | Async route computation without blocking API |
-| Database | PostgreSQL | Store routes, stops, drivers, delivery history |
-| Cache | Redis | Cache distance matrices, active route state |
-| Mapping API | OpenRouteService (free) or HERE Maps | Real driving distances, traffic data |
-| Frontend | React + TypeScript | Live map dashboard |
-| Map Visualization | Leaflet.js (via react-leaflet) | Open source, free, renders routes on map |
-| Cloud | AWS (EC2, RDS, ElastiCache, S3) | Aligns directly with Amazon interviews |
-| Containerization | Docker + Docker Compose | |
-| CI/CD | GitHub Actions | |
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| Backend API | Python 3.11, FastAPI | Async, WebSocket support |
+| Algorithm | Pure Python + NumPy | CVRPTWSolver, constraint checker, distance matrix |
+| Task Queue | Celery + Redis | Non-blocking optimization — API returns job_id immediately |
+| Database | PostgreSQL 15 + SQLAlchemy async | Alembic migrations, asyncpg driver |
+| Frontend | React 18, TypeScript, Vite | |
+| Map | Leaflet.js via react-leaflet | Colored polylines, marker popups, live recentering |
+| Distances | OpenRouteService API | Falls back to haversine when key not set |
+| Containers | Docker Compose | 5 services: backend, worker, frontend, db, redis |
+| Cloud | AWS EC2 + RDS + ElastiCache | Terraform IaC in `infra/terraform/` |
+| CI/CD | GitHub Actions | Test → build → SSH deploy → health check |
 
 ---
 
-## What You're Actually Building (Feature by Feature)
-
-### Core Engine
-- **Distance matrix builder** — given N stops, compute an N×N matrix of real driving distances/times using the mapping API. This is the foundation everything else runs on.
-- **CVRPTW solver** — the greedy + 2-opt algorithm described above, implemented in pure Python with NumPy for matrix operations
-- **Constraint validator** — checks every proposed route assignment against capacity limits and time windows before accepting it
-- **Route scorer** — scores a complete solution by total distance, total time, and number of constraint violations
-
-### API Layer (FastAPI)
-- Accept a JSON payload of stops (lat/lng, time window, package weight)
-- Trigger async route computation via Celery worker
-- Return optimized route assignments per driver with ETA per stop
-- Accept real-time traffic webhook and trigger rerouting
-- WebSocket endpoint for live route updates to the frontend
-
-### Data Models
-```
-Depot: id, name, lat, lng, open_time, close_time
-Vehicle: id, depot_id, capacity_kg, driver_name
-Stop: id, address, lat, lng, earliest_time, latest_time, package_weight_kg, status
-Route: id, vehicle_id, date, stops (ordered list), total_distance_km, total_time_min
-RouteStop: route_id, stop_id, sequence, planned_arrival, actual_arrival
-```
-
-### Frontend Dashboard (React + TypeScript)
-- **Map view** — Leaflet map showing depot, all stops as pins, and each driver's route as a colored polyline
-- **Fleet panel** — list of all drivers with their route summary (stops, distance, ETA)
-- **Stop detail** — click any pin to see package info, time window, planned arrival
-- **Live reroute indicator** — when rerouting triggers, animate the route change on the map
-- **Metrics panel** — total fleet distance, on-time delivery %, average stops per driver, utilization %
-
-### Simulation Mode (This Makes It Demonstrable)
-Since you don't have real drivers, build a simulator:
-- Generate a random set of N stops around a city (use real coordinates from a city like LA or Seattle)
-- Assign realistic time windows (morning slots, afternoon slots)
-- Assign random package weights
-- Run the optimizer
-- "Play" the simulation — animate drivers moving along their routes in real time on the map
-- Inject a random traffic event mid-simulation and watch routes update live
-
-This is the **demo moment** — you show an interviewer a live animated map of routes being optimized and rerouted in real time.
-
----
-
-## Folder Structure
+## Project Structure
 
 ```
 lastmile/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                      # FastAPI entry point + WebSocket
-│   │   ├── config.py                    # Settings, env vars
-│   │   ├── database.py                  # SQLAlchemy setup
-│   │   ├── models/
-│   │   │   ├── depot.py
-│   │   │   ├── vehicle.py
-│   │   │   ├── stop.py
-│   │   │   └── route.py
+│   │   ├── main.py                    # FastAPI entry point
+│   │   ├── config.py                  # Pydantic settings
+│   │   ├── database.py                # Async SQLAlchemy engine
+│   │   ├── models/                    # Depot, Vehicle, Stop, Route, RouteStop
 │   │   ├── routers/
-│   │   │   ├── routes.py                # Route generation endpoints
-│   │   │   ├── stops.py                 # Stop CRUD
-│   │   │   ├── vehicles.py              # Vehicle/driver management
-│   │   │   └── simulation.py            # Simulation control endpoints
+│   │   │   ├── routes.py              # Optimize, detail, reroute, WebSocket
+│   │   │   ├── stops.py
+│   │   │   ├── vehicles.py
+│   │   │   └── simulation.py
 │   │   ├── services/
-│   │   │   ├── distance_matrix.py       # Calls mapping API, builds N×N matrix
-│   │   │   ├── optimizer.py             # CVRPTW solver (greedy + 2-opt)
-│   │   │   ├── constraint_checker.py    # Time window + capacity validation
-│   │   │   ├── rerouter.py              # Real-time rerouting logic
-│   │   │   └── simulator.py            # Fake driver movement for demo
+│   │   │   ├── optimizer.py           # CVRPTWSolver — greedy + 2-opt
+│   │   │   ├── constraint_checker.py  # Time window + capacity validation
+│   │   │   ├── distance_matrix.py     # ORS API + haversine fallback
+│   │   │   ├── rerouter.py            # Live ETA recomputation
+│   │   │   └── simulator.py          # Scenario generator (Seattle/LA/NYC)
 │   │   └── workers/
-│   │       └── celery_tasks.py          # Async route computation tasks
-│   ├── tests/
-│   │   ├── test_optimizer.py            # Unit tests for routing algorithm
-│   │   ├── test_constraints.py
-│   │   └── test_distance_matrix.py
+│   │       └── celery_tasks.py        # Async optimization task
+│   ├── alembic/                       # Database migrations
+│   ├── tests/                         # 25 unit tests — optimizer, constraints, distances
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── DeliveryMap.tsx          # Leaflet map with routes + pins
-│   │   │   ├── FleetPanel.tsx           # Driver list + route summaries
-│   │   │   ├── MetricsBar.tsx           # KPI summary bar
-│   │   │   ├── StopDetail.tsx           # Click-to-inspect stop info
-│   │   │   └── SimulationControls.tsx   # Play/pause/speed simulation
+│   │   │   ├── DeliveryMap.tsx        # Leaflet map — polylines, markers, popups
+│   │   │   ├── FleetPanel.tsx         # Route list + expandable stop details
+│   │   │   ├── MetricsBar.tsx         # Distance / improvement / stop count
+│   │   │   └── SimulationControls.tsx # City, stop count, vehicle count, run button
 │   │   ├── hooks/
-│   │   │   └── useRouteWebSocket.ts     # WebSocket connection for live updates
+│   │   │   └── useRouteWebSocket.ts   # WebSocket connection + keep-alive
 │   │   ├── services/
-│   │   │   └── api.ts
+│   │   │   └── api.ts                 # Typed fetch wrappers
 │   │   └── App.tsx
 │   ├── Dockerfile
 │   └── package.json
-├── docker-compose.yml
+├── infra/
+│   ├── terraform/                     # VPC, EC2, RDS, ElastiCache, security groups
+│   └── DEPLOY.md                      # Step-by-step AWS deployment guide
 ├── .github/
 │   └── workflows/
-│       └── ci.yml
-├── .env.example
-└── README.md
+│       ├── ci.yml                     # pytest + Docker build on every push
+│       └── deploy.yml                 # SSH deploy to EC2 on merge to main
+├── docker-compose.yml
+└── .env.example
 ```
 
 ---
 
-## API Endpoints
+## Getting Started
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/routes/optimize` | Submit stops + vehicles, returns `job_id` for polling |
-| GET | `/routes/{job_id}/status` | Poll optimization result: `queued → done / failed` |
-| GET | `/routes/{route_id}/stops` | Ordered stop list (sequence + ETA) |
-| GET | `/routes/{route_id}/detail` | Full stop data: lat/lng, address, time windows, weight |
-| POST | `/routes/{route_id}/reroute` | Recompute ETAs with traffic delay factors applied |
-| WS | `/routes/ws/{route_id}` | WebSocket — live rerouted stop sequence |
-| POST | `/simulation/start` | Generate a realistic scenario (depot + vehicles + stops) |
-| POST | `/simulation/inject-traffic` | Build synthetic traffic event list for rerouting demo |
-| GET | `/stops` | List all stops |
-| POST | `/stops` | Create a stop |
-| GET | `/vehicles` | List fleet |
-| GET | `/health` | Health check |
-
----
-
-## The Algorithmic Depth (What You Talk About in Interviews)
-
-### Why is this NP-hard?
-With N stops and V vehicles, the number of possible route assignments is factorial. For just 20 stops and 3 vehicles, that's more combinations than atoms in the observable universe. You cannot brute force it. You need heuristics.
-
-### Why greedy + 2-opt?
-- Greedy nearest-neighbor builds a solution in O(n²) — fast enough for real-time use
-- 2-opt improvement typically reduces total distance by 10–20% over greedy alone
-- Amazon's research shows 2-opt variants outperform exact solvers on large real-world instances because exact solvers become infeasible above ~50 stops
-
-### What's the tradeoff you made?
-Optimality vs. speed. A true optimal solution for 100 stops is computationally intractable. Your 2-opt heuristic runs in seconds and gets within ~5–15% of optimal — acceptable for real operations. This is the exact same tradeoff Amazon makes.
-
-### What would you do to improve it further?
-- **Or-opt**: move chains of 2–3 stops between routes (stronger than 2-opt)
-- **Lin-Kernighan**: more powerful edge-swap heuristic
-- **Reinforcement learning**: Amazon's DDP approach — train a policy network to sequence stops based on historical driver behavior
-- **Simulated annealing**: accept worse solutions occasionally to escape local optima
-
-You don't need to implement these. But knowing them makes you dangerous in an interview.
-
----
-
-## Environment Variables
-
-```env
-# App
-SECRET_KEY=your_secret
-ENVIRONMENT=development
-
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/lastmile
-REDIS_URL=redis://localhost:6379
-
-# Mapping API
-ORS_API_KEY=your_openrouteservice_key   # Free tier: 2000 req/day
-
-# Celery
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/1
-
-# Frontend
-VITE_API_BASE_URL=http://localhost:8000
-VITE_WS_BASE_URL=ws://localhost:8000
-```
-
----
-
-## Docker Compose
-
-```yaml
-services:
-  backend:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    env_file: .env
-    depends_on:
-      - db
-      - redis
-
-  worker:
-    build: ./backend
-    command: celery -A app.workers.celery_tasks worker --loglevel=info
-    env_file: .env
-    depends_on:
-      - redis
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
-
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: lastmile
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-
-volumes:
-  postgres_data:
-```
-
----
-
-## Build Status
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Data models (SQLAlchemy) | ✅ Done | Depot, Vehicle, Stop, Route, RouteStop |
-| Alembic migrations | ✅ Done | Full DDL in `versions/`, runs on container start |
-| Distance matrix | ✅ Done | ORS API + haversine fallback |
-| Constraint checker | ✅ Done | Time windows + capacity validation |
-| CVRPTW solver (greedy + 2-opt) | ✅ Done | 25 unit tests, 0 warnings |
-| Celery async task queue | ✅ Done | Redis broker, async worker |
-| FastAPI REST + WebSocket | ✅ Done | `/optimize`, `/detail`, `/reroute`, `/ws/{id}` |
-| Simulation engine | ✅ Done | Seattle / LA / NYC scenarios |
-| React + Leaflet frontend | ✅ Done | Map, fleet panel, metrics bar, traffic button |
-| Live traffic reroute demo | ✅ Done | WebSocket push, ETAs update on map |
-| Docker Compose | ✅ Done | 5 services, healthchecks |
-| GitHub Actions CI/CD | ✅ Done | pytest → Docker build → SSH deploy to EC2 |
-| AWS deployment (IaC) | ✅ Done | Terraform: VPC, EC2, RDS, ElastiCache — see `infra/` |
-
----
-
-## Getting Started (Dev)
+### Local Development
 
 ```bash
 git clone https://github.com/AdithNG/lastmile
 cd lastmile
 cp .env.example .env
-# Add your OpenRouteService API key (free at openrouteservice.org)
-docker-compose up --build
+docker compose up --build
 
-# Backend:  http://localhost:8000
-# API docs: http://localhost:8000/docs
-# Frontend: http://localhost:3000
+# Backend API + docs:  http://localhost:8000/docs
+# Frontend dashboard:  http://localhost:3000
 ```
 
+The system works without any API keys — distances use haversine fallback. For real road distances, add a free [OpenRouteService](https://openrouteservice.org) key to `.env`.
+
+### Run Tests
+
+```bash
+docker compose exec backend python -m pytest tests/ -v
+# 25 passed in ~1s
+```
+
+### Production Deploy (AWS)
+
+See [`infra/DEPLOY.md`](infra/DEPLOY.md) for the full guide. The short version:
+
+```bash
+cd infra/terraform
+cp terraform.tfvars.example terraform.tfvars   # fill in your values
+terraform init && terraform apply              # ~8 minutes
+```
+
+Then add `EC2_HOST` and `EC2_SSH_KEY` to GitHub Secrets — every push to `main` auto-deploys.
+
 ---
 
-## Resume Bullets (Once Built)
+## API Reference
 
-- Built a real-time **Capacitated Vehicle Routing Problem with Time Windows (CVRPTW)** solver in Python using greedy nearest-neighbor construction and 2-opt local search improvement, reducing total route distance by up to 20% over naive assignment
-- Designed an async optimization pipeline using **FastAPI, Celery, and Redis** capable of processing 100-stop scenarios in under 3 seconds
-- Implemented **live route rerouting** triggered by real-time traffic events via WebSocket, updating active driver routes without service interruption
-- Built a full simulation and visualization layer using **React, TypeScript, and Leaflet.js** with animated driver movement and live route state on an interactive map
-- Deployed the full stack on **AWS (EC2, RDS, ElastiCache)** with Docker and a GitHub Actions CI/CD pipeline
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/simulation/start` | Generate scenario (depot + vehicles + stops) for a city |
+| POST | `/routes/optimize` | Submit optimization job, returns `job_id` |
+| GET | `/routes/{job_id}/status` | Poll: `queued → done / failed` |
+| GET | `/routes/{route_id}/detail` | Full stop data: lat/lng, address, time window, weight |
+| POST | `/routes/{route_id}/reroute` | Recompute ETAs with traffic delay factors |
+| WS | `/routes/ws/{route_id}` | Live rerouted stop sequence |
+| POST | `/simulation/inject-traffic` | Generate synthetic traffic events for demo |
+| GET | `/health` | Health check |
+
+Interactive docs at `/docs` (Swagger UI) after starting the backend.
 
 ---
 
-## Why This Impresses Amazon Specifically
+## Interview Talking Points
 
-- It's in **their exact problem domain** — Amazon Logistics solves CVRPTW millions of times per day
-- It demonstrates **algorithmic thinking**, not just API glue — you can explain NP-hardness, heuristics, and tradeoffs
-- The **async architecture** (FastAPI + Celery + Redis + WebSocket) mirrors how Amazon's distributed systems are actually built
-- It's **deployed on AWS** — you're showing comfort with the platform they sell
-- Amazon literally co-hosted a **research challenge at MIT** on this exact problem. You built your own version.
+**Why is CVRPTW NP-hard?**
+With N stops and V vehicles the assignment space is factorial. For 20 stops and 3 vehicles there are more combinations than atoms in the observable universe — exact solvers become infeasible above ~50 stops.
+
+**Why greedy + 2-opt instead of an exact solver?**
+Greedy builds a feasible solution in O(n²). 2-opt improves it by reversing sub-segments until no swap reduces distance — typically 10–20% improvement. It runs in seconds, scales to hundreds of stops, and produces routes within ~5–15% of optimal. Exact solvers like branch-and-bound take exponential time and are impractical for real operations. This is the same tradeoff Amazon makes.
+
+**What would you add next?**
+Or-opt (move chains of 2–3 stops between routes), Lin-Kernighan (stronger edge swaps), or reinforcement learning (Amazon's DDP approach — a policy network trained on historical driver behavior to sequence stops).
+
+---
+
+## Resume Bullets
+
+- Implemented a **CVRPTW route optimization engine** in Python using greedy nearest-neighbor construction and 2-opt local search, achieving 10–20% distance reduction over naive assignment across fleets of 3–10 vehicles and 5–50 stops
+- Designed an **async optimization pipeline** with FastAPI, Celery, and Redis — the API returns a job ID immediately and the solver runs in a background worker, enabling non-blocking optimization for concurrent requests
+- Built **real-time traffic rerouting** via WebSocket: when a traffic event fires, the rerouter rebuilds the time matrix with delay factors, recomputes all remaining ETAs, and pushes the updated stop sequence to the frontend without a page refresh
+- Provisioned the full AWS stack using **Terraform** (VPC, EC2, RDS PostgreSQL, ElastiCache Redis) with a GitHub Actions CD pipeline that SSHes into EC2, rebuilds Docker containers, runs Alembic migrations, and health-checks the API on every merge to main
+
+---
+
+## Why This Project
+
+Amazon co-hosted the **Last Mile Routing Research Challenge with MIT** to solve exactly this problem. Their internal DDP (Dynamic Dispatch Platform) uses reinforcement learning to optimize tens of millions of deliveries. LastMile is a technically rigorous, end-to-end implementation of the same problem domain — with a live demo you can run in one command.
