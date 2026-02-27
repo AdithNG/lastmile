@@ -21,6 +21,8 @@ app.include_router(simulation.router, prefix="/simulation", tags=["simulation"])
 
 @app.on_event("startup")
 async def startup():
+    # Tables are managed by Alembic (run `alembic upgrade head` before starting).
+    # create_all is kept as a safety net for fresh dev environments without Alembic.
     from app.database import engine, Base
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
