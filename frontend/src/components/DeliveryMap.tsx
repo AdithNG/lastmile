@@ -18,6 +18,10 @@ interface StopCoord {
   lng: number;
   plannedArrival: string | null;
   sequence: number;
+  address?: string;
+  earliestTime?: string;
+  latestTime?: string;
+  weightKg?: number;
 }
 
 interface RouteLayer {
@@ -74,9 +78,13 @@ export function DeliveryMap({ routes, centerLat = 47.6062, centerLng = -122.3321
             {route.stops.map((s) => (
               <Marker key={s.stopId} position={[s.lat, s.lng]} icon={stopIcon}>
                 <Popup>
-                  <strong>Stop #{s.sequence + 1}</strong>
-                  <br />
-                  ETA: {s.plannedArrival ?? "—"}
+                  <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+                    <strong>Stop #{s.sequence + 1}</strong><br />
+                    {s.address && <>{s.address}<br /></>}
+                    ETA: <b>{s.plannedArrival ?? "—"}</b><br />
+                    {s.earliestTime && <>Window: {s.earliestTime} – {s.latestTime}<br /></>}
+                    {s.weightKg != null && <>Weight: {s.weightKg} kg</>}
+                  </div>
                 </Popup>
               </Marker>
             ))}

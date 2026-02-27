@@ -37,6 +37,18 @@ export interface RouteStop {
   planned_arrival: string | null;
 }
 
+export interface RouteStopDetail {
+  stop_id: number;
+  sequence: number;
+  planned_arrival: string | null;
+  lat: number;
+  lng: number;
+  address: string;
+  earliest_time: string;
+  latest_time: string;
+  package_weight_kg: number;
+}
+
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
@@ -65,6 +77,9 @@ export const api = {
 
   getRouteStops: (routeId: number) =>
     get<RouteStop[]>(`/routes/${routeId}/stops`),
+
+  getRouteDetail: (routeId: number) =>
+    get<RouteStopDetail[]>(`/routes/${routeId}/detail`),
 
   reroute: (routeId: number, trafficEvents: object[]) =>
     post(`/routes/${routeId}/reroute`, { traffic_events: trafficEvents }),
