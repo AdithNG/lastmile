@@ -27,6 +27,12 @@ async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    print("\n" + "=" * 50)
+    print("  LastMile is running!")
+    print("  Frontend:  http://localhost:3000")
+    print("  API docs:  http://localhost:8000/docs")
+    print("=" * 50 + "\n")
+
 
 @app.get("/health")
 async def health():
