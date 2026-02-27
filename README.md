@@ -13,7 +13,7 @@
 
 LastMile takes a set of delivery stops scattered across a city, a fleet of vehicles each with a weight capacity, and time windows for each stop — and computes the optimal set of routes for each driver. When traffic conditions change mid-delivery, it reroutes in real time and pushes updated ETAs to the frontend over WebSocket.
 
-**Live demo flow:**
+**Demo** (`docker compose up --build`, then open `http://localhost:3000`):
 1. Select a city (Seattle / LA / NYC), set number of stops and vehicles
 2. Click **Run Simulation** — the engine generates stops, solves the CVRPTW, and draws colored route polylines on the map
 3. Click any route in the fleet panel to see its full stop list with addresses and ETAs
@@ -96,8 +96,8 @@ When a traffic event arrives, the rerouter:
 | Map | Leaflet.js via react-leaflet | Colored polylines, marker popups, live recentering |
 | Distances | OpenRouteService API | Falls back to haversine when key not set |
 | Containers | Docker Compose | 5 services: backend, worker, frontend, db, redis |
-| Cloud | AWS EC2 + RDS + ElastiCache | Terraform IaC in `infra/terraform/` |
-| CI/CD | GitHub Actions | Test → build → SSH deploy → health check |
+| Cloud | AWS EC2 + RDS + ElastiCache | Terraform IaC in `infra/terraform/` — spin up on demand |
+| CI/CD | GitHub Actions | pytest + Docker build on every push |
 
 ---
 
@@ -233,4 +233,4 @@ Or-opt (move chains of 2–3 stops between routes), Lin-Kernighan (stronger edge
 
 ## Why This Project
 
-Amazon co-hosted the **Last Mile Routing Research Challenge with MIT** to solve exactly this problem. Their internal DDP (Dynamic Dispatch Platform) uses reinforcement learning to optimize tens of millions of deliveries. LastMile is a technically rigorous, end-to-end implementation of the same problem domain — with a live demo you can run in one command.
+Amazon co-hosted the **Last Mile Routing Research Challenge with MIT** to solve exactly this problem. Their internal DDP (Dynamic Dispatch Platform) uses reinforcement learning to optimize tens of millions of deliveries. LastMile is a technically rigorous, end-to-end implementation of the same problem domain — fully runnable in one command with Docker Compose.
