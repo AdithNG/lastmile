@@ -2,7 +2,7 @@ from datetime import time
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,8 @@ class StopCreate(BaseModel):
 
 
 class StopResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     address: str
     lat: float
@@ -30,9 +32,6 @@ class StopResponse(BaseModel):
     latest_time: time
     package_weight_kg: float
     status: StopStatus
-
-    class Config:
-        from_attributes = True
 
 
 @router.get("/", response_model=List[StopResponse])
