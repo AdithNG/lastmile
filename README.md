@@ -306,8 +306,8 @@ volumes:
 | React + Leaflet frontend | ✅ Done | Map, fleet panel, metrics bar, traffic button |
 | Live traffic reroute demo | ✅ Done | WebSocket push, ETAs update on map |
 | Docker Compose | ✅ Done | 5 services, healthchecks |
-| GitHub Actions CI | ✅ Done | pytest → Docker build on push |
-| AWS deployment | 🔜 Planned | EC2 + RDS + ElastiCache |
+| GitHub Actions CI/CD | ✅ Done | pytest → Docker build → SSH deploy to EC2 |
+| AWS deployment (IaC) | ✅ Done | Terraform: VPC, EC2, RDS, ElastiCache — see `infra/` |
 
 ---
 
