@@ -5,6 +5,7 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main]
+  workflow_call:  # allow deploy.yml to call this as a reusable workflow
 
 jobs:
   test-backend:
