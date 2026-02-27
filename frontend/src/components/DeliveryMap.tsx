@@ -35,6 +35,7 @@ interface Props {
   routes: RouteLayer[];
   centerLat?: number;
   centerLng?: number;
+  trafficRouteIds?: Set<number>;
 }
 
 function RecenterMap({ lat, lng }: { lat: number; lng: number }) {
@@ -45,7 +46,7 @@ function RecenterMap({ lat, lng }: { lat: number; lng: number }) {
   return null;
 }
 
-export function DeliveryMap({ routes, centerLat = 47.6062, centerLng = -122.3321 }: Props) {
+export function DeliveryMap({ routes, centerLat = 47.6062, centerLng = -122.3321, trafficRouteIds }: Props) {
   return (
     <MapContainer
       center={[centerLat, centerLng]}
@@ -60,8 +61,10 @@ export function DeliveryMap({ routes, centerLat = 47.6062, centerLng = -122.3321
 
       {routes.map((route, ri) => {
         const color = ROUTE_COLORS[ri % ROUTE_COLORS.length];
-        const depotIcon = L.divIcon({ className: "", html: `<div style="width:14px;height:14px;background:#fff;border:3px solid ${color};border-radius:50%"/>` });
-        const stopIcon = L.divIcon({ className: "", html: `<div style="width:10px;height:10px;background:${color};border-radius:50%"/>` });
+        const hasTraffic = trafficRouteIds?.has(route.routeId) ?? false;
+        const lineColor = hasTraffic ? "#ef4444" : color;
+        const depotIcon = L.divIcon({ className: "", html: `<div style="width:14px;height:14px;background:#fff;border:3px solid ${lineColor};border-radius:50%"/>` });
+        const stopIcon = L.divIcon({ className: "", html: `<div style="width:10px;height:10px;background:${lineColor};border-radius:50%;${hasTraffic ? "box-shadow:0 0 0 2px #fbbf24" : ""}"/>` });
 
         const polyline: [number, number][] = [
           [route.depotLat, route.depotLng],
@@ -74,7 +77,7 @@ export function DeliveryMap({ routes, centerLat = 47.6062, centerLng = -122.3321
             <Marker position={[route.depotLat, route.depotLng]} icon={depotIcon}>
               <Popup>Depot</Popup>
             </Marker>
-            <Polyline positions={polyline} color={color} weight={2.5} opacity={0.8} />
+            <Polyline positions={polyline} color={lineColor} weight={hasTraffic ? 4 : 2.5} opacity={hasTraffic ? 1 : 0.8} dashArray={hasTraffic ? "8 5" : undefined} />
             {route.stops.map((s) => (
               <Marker key={s.stopId} position={[s.lat, s.lng]} icon={stopIcon}>
                 <Popup>
