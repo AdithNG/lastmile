@@ -185,16 +185,18 @@ lastmile/
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/routes/optimize` | Submit stops + vehicles, trigger async optimization |
-| GET | `/routes/{job_id}` | Poll for optimization result |
-| GET | `/routes/{route_id}/stops` | Get ordered stop list for a route |
-| POST | `/routes/{route_id}/reroute` | Trigger reroute with new traffic data |
-| WS | `/ws/routes/{route_id}` | WebSocket — live route state updates |
-| POST | `/simulation/start` | Start a simulation scenario |
-| POST | `/simulation/inject-traffic` | Inject a fake traffic event |
+| POST | `/routes/optimize` | Submit stops + vehicles, returns `job_id` for polling |
+| GET | `/routes/{job_id}/status` | Poll optimization result: `queued → done / failed` |
+| GET | `/routes/{route_id}/stops` | Ordered stop list (sequence + ETA) |
+| GET | `/routes/{route_id}/detail` | Full stop data: lat/lng, address, time windows, weight |
+| POST | `/routes/{route_id}/reroute` | Recompute ETAs with traffic delay factors applied |
+| WS | `/routes/ws/{route_id}` | WebSocket — live rerouted stop sequence |
+| POST | `/simulation/start` | Generate a realistic scenario (depot + vehicles + stops) |
+| POST | `/simulation/inject-traffic` | Build synthetic traffic event list for rerouting demo |
 | GET | `/stops` | List all stops |
-| POST | `/stops` | Create a stop (address, time window, weight) |
+| POST | `/stops` | Create a stop |
 | GET | `/vehicles` | List fleet |
+| GET | `/health` | Health check |
 
 ---
 
@@ -289,20 +291,23 @@ volumes:
 
 ---
 
-## Build Order
+## Build Status
 
-1. **Data models + database** — Depot, Vehicle, Stop, Route, RouteStop (SQLAlchemy + Alembic)
-2. **Distance matrix service** — call OpenRouteService API, build and cache N×N matrix in Redis
-3. **Constraint checker** — validate time windows and capacity for any proposed route
-4. **Greedy constructor** — build initial feasible solution, write unit tests with known inputs
-5. **2-opt improver** — improve the greedy solution, measure distance reduction in tests
-6. **Celery task** — wrap the full optimizer as an async task, store result in PostgreSQL
-7. **FastAPI routes** — expose optimize, poll, and reroute endpoints
-8. **WebSocket** — broadcast live route state to connected frontend clients
-9. **Simulator** — fake driver positions moving along routes over time
-10. **React frontend** — map, fleet panel, metrics, simulation controls
-11. **AWS deployment** — EC2 for app, RDS for Postgres, ElastiCache for Redis
-12. **CI/CD** — GitHub Actions: run tests → build Docker images → deploy
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Data models (SQLAlchemy) | ✅ Done | Depot, Vehicle, Stop, Route, RouteStop |
+| Alembic migrations | ✅ Done | Full DDL in `versions/`, runs on container start |
+| Distance matrix | ✅ Done | ORS API + haversine fallback |
+| Constraint checker | ✅ Done | Time windows + capacity validation |
+| CVRPTW solver (greedy + 2-opt) | ✅ Done | 25 unit tests, 0 warnings |
+| Celery async task queue | ✅ Done | Redis broker, async worker |
+| FastAPI REST + WebSocket | ✅ Done | `/optimize`, `/detail`, `/reroute`, `/ws/{id}` |
+| Simulation engine | ✅ Done | Seattle / LA / NYC scenarios |
+| React + Leaflet frontend | ✅ Done | Map, fleet panel, metrics bar, traffic button |
+| Live traffic reroute demo | ✅ Done | WebSocket push, ETAs update on map |
+| Docker Compose | ✅ Done | 5 services, healthchecks |
+| GitHub Actions CI | ✅ Done | pytest → Docker build on push |
+| AWS deployment | 🔜 Planned | EC2 + RDS + ElastiCache |
 
 ---
 
