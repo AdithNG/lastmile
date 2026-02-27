@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.route import Route, RouteStop
+from app.models.stop import Stop
 from app.workers.celery_tasks import celery_app, optimize_routes_task
 
 router = APIRouter()
@@ -71,6 +72,19 @@ class RouteStopResponse(BaseModel):
         from_attributes = True
 
 
+class RouteStopDetail(BaseModel):
+    """Full stop data including coordinates — used by the map."""
+    stop_id: int
+    sequence: int
+    planned_arrival: str | None
+    lat: float
+    lng: float
+    address: str
+    earliest_time: str
+    latest_time: str
+    package_weight_kg: float
+
+
 class RouteResponse(BaseModel):
     id: int
     vehicle_id: int
@@ -123,6 +137,40 @@ async def get_route_stops(route_id: int, db: AsyncSession = Depends(get_db)):
     if not stops:
         raise HTTPException(status_code=404, detail="Route not found")
     return stops
+
+
+@router.get("/{route_id}/detail", response_model=List[RouteStopDetail])
+async def get_route_detail(route_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Return ordered stops with full coordinates and stop metadata.
+    Used by the frontend to build map polylines and marker popups.
+    """
+    route_stops = (
+        await db.execute(
+            select(RouteStop)
+            .where(RouteStop.route_id == route_id)
+            .order_by(RouteStop.sequence)
+        )
+    ).scalars().all()
+
+    if not route_stops:
+        raise HTTPException(status_code=404, detail="Route not found")
+
+    detail = []
+    for rs in route_stops:
+        stop = (await db.execute(select(Stop).where(Stop.id == rs.stop_id))).scalar_one()
+        detail.append(RouteStopDetail(
+            stop_id=rs.stop_id,
+            sequence=rs.sequence,
+            planned_arrival=rs.planned_arrival,
+            lat=stop.lat,
+            lng=stop.lng,
+            address=stop.address,
+            earliest_time=str(stop.earliest_time),
+            latest_time=str(stop.latest_time),
+            package_weight_kg=stop.package_weight_kg,
+        ))
+    return detail
 
 
 @router.post("/{route_id}/reroute")

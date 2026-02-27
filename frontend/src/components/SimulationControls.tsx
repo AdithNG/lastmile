@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api, type OptimizeResult } from "../services/api";
 
 interface Props {
-  onOptimized: (result: OptimizeResult, routeIds: number[]) => void;
+  onOptimized: (result: OptimizeResult, routeIds: number[], city: string) => void;
 }
 
 export function SimulationControls({ onOptimized }: Props) {
@@ -42,7 +42,7 @@ export function SimulationControls({ onOptimized }: Props) {
       if (!result) throw new Error("Optimization timed out");
 
       setStatus(`Done — ${result.improvement_pct.toFixed(1)}% improvement over greedy`);
-      onOptimized(result, result.route_ids);
+      onOptimized(result, result.route_ids, city);
     } catch (err) {
       setStatus(`Error: ${(err as Error).message}`);
     } finally {
