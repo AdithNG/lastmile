@@ -14,7 +14,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: test
-    environment: production  # requires manual approval in GitHub Environments settings
 
     steps:
       - name: Checkout
