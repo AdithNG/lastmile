@@ -17,7 +17,7 @@ LastMile takes a set of delivery stops scattered across a city, a fleet of vehic
 1. Select a city (Seattle / LA / NYC), set number of stops and vehicles
 2. Click **Run Simulation** — the engine generates stops, solves the CVRPTW, and draws colored route polylines on the map
 3. Click any route in the fleet panel to see its full stop list with addresses and ETAs
-4. Click **Simulate Traffic Delay** — the rerouter recomputes ETAs with a 1.8× delay factor and the map updates live via WebSocket
+4. Click **Simulate Traffic Delay** — the route turns red and dashed on the map immediately, the rerouter recomputes ETAs with a 1.8× delay factor, and updated stop times push live via WebSocket
 
 ---
 
@@ -94,7 +94,7 @@ When a traffic event arrives, the rerouter:
 | Database | PostgreSQL 15 + SQLAlchemy async | Alembic migrations, asyncpg driver |
 | Frontend | React 18, TypeScript, Vite | |
 | Map | Leaflet.js via react-leaflet | Colored polylines, marker popups, live recentering |
-| Distances | OpenRouteService API | Falls back to haversine when key not set |
+| Distances | OpenRouteService API | Falls back to haversine when key not set or stop count exceeds ORS 50-location limit |
 | Containers | Docker Compose | 5 services: backend, worker, frontend, db, redis |
 | Cloud | AWS EC2 + RDS + ElastiCache | Terraform IaC in `infra/terraform/` — spin up on demand |
 | CI/CD | GitHub Actions | pytest + Docker build on every push |
@@ -169,7 +169,7 @@ docker compose up --build
 # Frontend dashboard:  http://localhost:3000
 ```
 
-The system works without any API keys — distances use haversine fallback. For real road distances, add a free [OpenRouteService](https://openrouteservice.org) key to `.env`.
+The system works without any API keys — distances use haversine fallback. For real road distances, add a free [OpenRouteService](https://openrouteservice.org) key to `.env` and keep stop count ≤ 49 (ORS free tier cap).
 
 ### Run Tests
 

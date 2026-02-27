@@ -26,6 +26,7 @@ export default function App() {
   const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null);
   const [mapCentre, setMapCentre] = useState<[number, number]>(CITY_CENTRES.seattle);
   const [trafficLoading, setTrafficLoading] = useState(false);
+  const [trafficRouteIds, setTrafficRouteIds] = useState<Set<number>>(new Set());
 
   // Keep a ref so the WebSocket effect closure can access latest routes without stale state
   const routesRef = useRef<RouteState[]>([]);
@@ -86,6 +87,7 @@ export default function App() {
 
   async function handleTrafficInject(routeId: number) {
     setTrafficLoading(true);
+    setTrafficRouteIds((prev) => new Set([...prev, routeId]));
     try {
       const events = await api.injectTraffic(routeId, 1.8);
       await api.reroute(routeId, events);
@@ -149,6 +151,7 @@ export default function App() {
           routes={mapLayers}
           centerLat={mapCentre[0]}
           centerLng={mapCentre[1]}
+          trafficRouteIds={trafficRouteIds}
         />
       </div>
     </div>
