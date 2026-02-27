@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+logger = logging.getLogger("uvicorn.error")
 
 from app.routers import routes, stops, vehicles, simulation
 
@@ -27,11 +31,11 @@ async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    print("\n" + "=" * 50)
-    print("  LastMile is running!")
-    print("  Frontend:  http://localhost:3000")
-    print("  API docs:  http://localhost:8000/docs")
-    print("=" * 50 + "\n")
+    logger.info("=" * 50)
+    logger.info("  LastMile is running!")
+    logger.info("  Frontend:  http://localhost:3000")
+    logger.info("  API docs:  http://localhost:8000/docs")
+    logger.info("=" * 50)
 
 
 @app.get("/health")
