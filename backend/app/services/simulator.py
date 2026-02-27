@@ -99,15 +99,21 @@ async def generate_scenario(
     }
 
 
-def inject_traffic_event(route_id: int, delay_factor: float = 1.5) -> Dict:
+def inject_traffic_event(route_id: int, delay_factor: float = 1.5) -> List[Dict]:
     """
-    Build a synthetic traffic event payload.
-    In a real system this would come from HERE Traffic or Google Maps.
-    The frontend calls POST /simulation/inject-traffic, which triggers
-    the rerouter and broadcasts the updated route over WebSocket.
+    Build a synthetic traffic event payload in the format expected by the rerouter.
+
+    Returns a list of matrix-edge delay events:
+      [{"from_idx": int, "to_idx": int, "delay_factor": float}]
+
+    In a real system these edges would come from HERE Traffic or Google Maps.
+    The frontend passes this list to POST /routes/{id}/reroute, which recomputes
+    ETAs and broadcasts the updated stop sequence over WebSocket.
     """
-    return {
-        "route_id": route_id,
-        "delay_factor": delay_factor,
-        "event": "traffic_injected",
-    }
+    # Inject delays on the first three legs of the route (depot → stop 1 → 2 → 3).
+    # The rerouter silently skips any out-of-bounds indices, so this is always safe.
+    return [
+        {"from_idx": 0, "to_idx": 1, "delay_factor": delay_factor},
+        {"from_idx": 1, "to_idx": 2, "delay_factor": delay_factor},
+        {"from_idx": 2, "to_idx": 3, "delay_factor": delay_factor},
+    ]
