@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init)",
+      "Bash(git branch -M main)",
+      "Bash(git remote add origin https://github.com/AdithNG/lastmile.git)",
+      "Bash(git add .gitignore lastmile-plan.md .env.example docker-compose.yml .github/ backend/ frontend/)",
+      "Bash(git add .gitattributes)",
+      "Bash(git commit:*)",
+      "Bash(git push -u origin main)",
+      "Bash(git add README.md)",
+      "Bash(git push)",
+      "Bash(docker --version)",
+      "Bash(docker compose version)",
+      "Bash(docker compose up --build)",
+      "Bash(docker info)",
+      "Bash(docker compose up)",
+      "Bash(git add frontend/src/vite-env.d.ts docker-compose.yml)",
+      "Bash(git add -A)"
+    ]
+  }
+}
