@@ -5,7 +5,7 @@
 # EC2 — allow SSH from your IP, HTTP/HTTPS from anywhere
 resource "aws_security_group" "ec2" {
   name        = "${var.project}-ec2-sg"
-  description = "App server — SSH + HTTP(S)"
+  description = "App server - SSH + HTTP(S)"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -62,7 +62,7 @@ resource "aws_security_group" "ec2" {
 # RDS — only accessible from EC2
 resource "aws_security_group" "rds" {
   name        = "${var.project}-rds-sg"
-  description = "PostgreSQL — EC2 access only"
+  description = "PostgreSQL - EC2 access only"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -86,7 +86,7 @@ resource "aws_security_group" "rds" {
 # ElastiCache — only accessible from EC2
 resource "aws_security_group" "redis" {
   name        = "${var.project}-redis-sg"
-  description = "Redis — EC2 access only"
+  description = "Redis - EC2 access only"
   vpc_id      = aws_vpc.main.id
 
   ingress {
