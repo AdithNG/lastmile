@@ -2,7 +2,7 @@ from datetime import date
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,12 +64,11 @@ class RerouteRequest(BaseModel):
 
 
 class RouteStopResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     stop_id: int
     sequence: int
     planned_arrival: str | None
-
-    class Config:
-        from_attributes = True
 
 
 class RouteStopDetail(BaseModel):
@@ -86,12 +85,11 @@ class RouteStopDetail(BaseModel):
 
 
 class RouteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     vehicle_id: int
     total_distance_km: float
-
-    class Config:
-        from_attributes = True
 
 
 # ---------------------------------------------------------------------------

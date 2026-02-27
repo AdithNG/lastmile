@@ -1,7 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,13 +18,12 @@ class VehicleCreate(BaseModel):
 
 
 class VehicleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     depot_id: int
     capacity_kg: float
     driver_name: str
-
-    class Config:
-        from_attributes = True
 
 
 @router.get("/", response_model=List[VehicleResponse])
